@@ -30,7 +30,7 @@ jobs:
     - name: Copy static site
       run: |
         mkdir -p dist
-        cp -r static/* dist/
+        cp -r html/* dist/
 
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v4
