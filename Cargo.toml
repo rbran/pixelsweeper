@@ -2,6 +2,9 @@
 name = "pixelsweeper"
 version = "0.1.0"
 edition = "2024"
+description = "A minesweeper like game, but the grid are pixels"
+repository = "https://github.com/rbran/pixelsweeper"
+license = "MIT OR Apache-2.0"
 
 [lib]
 crate-type = ["cdylib"]
