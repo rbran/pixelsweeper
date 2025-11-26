@@ -1,15 +1,7 @@
 [package]
-name = "analog-minesweeper"
+name = "pixelsweeper"
 version = "0.1.0"
 edition = "2024"
-
-# TODO install wasm-opt and delete this
-[package.metadata.wasm-pack.profile.dev]
-wasm-opt = false
-[package.metadata.wasm-pack.profile.profiling]
-wasm-opt = false
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = false
 
 [lib]
 crate-type = ["cdylib"]
