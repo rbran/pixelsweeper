@@ -107,51 +107,152 @@ impl GameGrid {
     }
 
     fn round_area(
-        &self,
         x: usize,
         y: usize,
         radius: usize,
     ) -> impl Iterator<Item = (usize, usize)> + 'static {
-        // TODO don't do it the dumb way
-        let x_start = x.saturating_sub(radius.into());
-        let x_end = x
-            .saturating_add(radius.into())
-            .min((BOARD_WIDTH - 1).into());
-        let y_start = y.saturating_sub(radius.into());
-        let y_end = y
-            .saturating_add(radius.into())
-            .min((BOARD_HEIGHT - 1).into());
-        (x_start..=x_end).flat_map(move |x_current| {
-            (y_start..=y_end).filter_map(move |y_current| {
-                let x_abs = x.abs_diff(x_current);
-                let y_abs = y.abs_diff(y_current);
-                let distance = usize::isqrt(x_abs.pow(2) + y_abs.pow(2));
-                // if inside the area, show the pixel
-                (distance < radius.into()).then_some((x_current, y_current))
+        /*
+        Fill the circle line by line:
+
+        eg r = 5:
+           11111
+          2222222
+         233333332
+        12333333321
+        12333333321
+        12333333321
+        12333333321
+        12333333321
+         233333332
+          2222222
+           11111
+
+        line index 0
+        r^2 + (x+1)^2 = (r+1)^2 => r^2 + x^2 + 2x + 1 = r^2 + 2r + 1 =>
+        x^2 + 2x - 2r = 0 => x = (-2 + sqrt(8r+4)) / 2
+        eg: x = (-2 + sqrt(40+4)) / 2 = 2,316...
+
+        line index 1
+        (r-1)^2 + (x+1)^2 = (r+1)^2 => r^2 - 2r + 1 + x^2 + 2x + 1 = r^2 + 2r + 1 =>
+        x^2 + 2x + (1 - 4r) = 0 => x = (-2 + sqrt(16r))) / 2
+        eg: x = (-2 + sqrt(80)) / 2 = 3,472...
+
+        line index 2 eg: don't need to calculate the inner square covers it
+
+        line index n
+        (r-n)^2 + (x+1)^2 = (r+1)^2 => r^2 - 2nr + n^2 + x^2 + 2x + 1 = r^2 + 2r + 1 =>
+        x^2 + 2x + (n^2 - 2nr - 2r) = 0
+        x = (-2 + sqrt(4 - 4(n^2 - 2nr - 2r))) / 2
+
+        switch point between circle and square
+        r^2 = 2x^2 => x = r/2
+
+        */
+
+        // TODO we use only usizes, but draing is done using f64, switch?
+
+        fn line_len(n: usize, r: usize) -> usize {
+            // don't let it became negative, those are usize
+            // 4 - 4(n^2 - 2nr - 2r)) => 4 + 8nr + 8r + -4(n^2)
+            let c1 = 8 * n * r;
+            let c2 = 8 * r;
+            let c3 = 4 * n.pow(2);
+            // only c3 can be negative, we invert the logic, so the number is +
+            let sqrt = (4 + c1 + c2 - c3).isqrt();
+            if sqrt < 2 {
+                return 0;
+            }
+            (sqrt - 2) / 2
+        }
+
+        let half_radius = radius / 2;
+        // Hummm... I may got carried way a little bit in the iterators...
+        (0..half_radius)
+            .flat_map(move |n| {
+                let len = line_len(n, radius);
+                let walk_horizontal = x.saturating_sub(len)
+                    ..x.saturating_add(len + 1).min(BOARD_WIDTH.into());
+                let walk_vertical = y.saturating_sub(len)
+                    ..y.saturating_add(len + 1).min(BOARD_HEIGHT.into());
+                // top
+                (y >= radius - n)
+                    .then_some(
+                        walk_horizontal
+                            .clone()
+                            .map(move |x| (x, y - (radius - n))),
+                    )
+                    .into_iter()
+                    .flatten()
+                    // botton
+                    .chain(
+                        (y + (radius - n) < BOARD_HEIGHT.into())
+                            .then_some(
+                                walk_horizontal
+                                    .clone()
+                                    .map(move |x| (x, y + (radius - n))),
+                            )
+                            .into_iter()
+                            .flatten(),
+                    )
+                    // left
+                    .chain(
+                        (x >= radius - n)
+                            .then_some(
+                                walk_vertical
+                                    .clone()
+                                    .map(move |y| (x - (radius - n), y)),
+                            )
+                            .into_iter()
+                            .flatten(),
+                    )
+                    // right
+                    .chain(
+                        (x + (radius - n) < BOARD_WIDTH.into())
+                            .then_some(
+                                walk_vertical
+                                    .clone()
+                                    .map(move |y| (x + (radius - n), y)),
+                            )
+                            .into_iter()
+                            .flatten(),
+                    )
             })
-        })
+            .chain(
+                std::iter::once_with(move || {
+                    (y.saturating_sub(half_radius)
+                        ..y.saturating_add(half_radius + 1)
+                            .min(BOARD_HEIGHT.into()))
+                        .flat_map(move |y| {
+                            (x.saturating_sub(half_radius)
+                                ..x.saturating_add(half_radius + 1)
+                                    .min(BOARD_WIDTH.into()))
+                                .map(move |x| (x, y))
+                        })
+                })
+                .flatten(),
+            )
     }
 
     fn detector_touch_hidden(&self, x: usize, y: usize) -> bool {
         // TODO don't do it the dumb way
-        self.round_area(x, y, DETECTOR_SIZE_RAD.into())
+        Self::round_area(x, y, DETECTOR_SIZE_RAD.into())
             .any(|(x, y)| self.pixel_at(x, y).hidden)
     }
 
     fn detector_reveal_area(&mut self, x: usize, y: usize) {
         // TODO don't do it the dumb way
-        self.round_area(x, y, DETECTOR_SIZE_RAD.into())
+        Self::round_area(x, y, DETECTOR_SIZE_RAD.into())
             .for_each(|(x, y)| self.pixel_at_mut(x, y).hidden = false)
     }
 
     fn detector_reveal_range(&mut self, x: usize, y: usize) {
         // TODO don't do it the dumb way
-        self.round_area(x, y, DETECTOR_RANGE_RAD.into())
+        Self::round_area(x, y, DETECTOR_RANGE_RAD.into())
             .for_each(|(x, y)| self.pixel_at_mut(x, y).hidden = false)
     }
 
     fn detector_calculate_bombs(&self, x: usize, y: usize) -> usize {
-        self.round_area(x, y, DETECTOR_RANGE_RAD.into())
+        Self::round_area(x, y, DETECTOR_RANGE_RAD.into())
             .filter(|&(x, y)| self.pixel_at(x, y).have_bomb)
             .count()
     }
